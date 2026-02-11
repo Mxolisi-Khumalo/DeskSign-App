@@ -21,15 +21,29 @@
             cancelLabel="Cancel"
             [customUpload]="true" 
             (uploadHandler)="customUpload($event)" 
+            (onUpload)="onUpload($event)"
             [multiple]="false" 
             accept="application/pdf" 
             maxFileSize="10000000">
             
-            <!-- Custom Empty Template (What shows before you drop a file) -->
-            <ng-template pTemplate="content">
-                <div class="flex flex-col items-center justify-center py-10" *ngIf="!uploadedFiles?.length">
+            <!-- 
+                FIX 3: Use PrimeNG's 'content' template properly.
+                'let-files' gives us access to the files inside the template.
+            -->
+            <ng-template pTemplate="content" let-files>
+                <!-- Show this ONLY if there are NO files selected -->
+                <div *ngIf="!files || files.length === 0" class="flex flex-col items-center justify-center py-10">
                     <i class="pi pi-cloud-upload text-6xl text-slate-300 mb-4"></i>
-                    <p class="text-slate-600">Drag and drop your PDF here to start signing</p>
+                    <p class="text-slate-600">Drag and drop your PDF here</p>
+                </div>
+
+                <!-- Show this if there ARE files selected (Visual Feedback) -->
+                <div *ngIf="files && files.length > 0" class="p-4">
+                    <div *ngFor="let file of files" class="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <i class="pi pi-file-pdf text-red-500 text-xl mr-3"></i>
+                        <span class="font-semibold text-slate-700">{{file.name}}</span>
+                        <span class="ml-auto text-sm text-slate-500">{{(file.size / 1024).toFixed(0)}} KB</span>
+                    </div>
                 </div>
             </ng-template>
 
