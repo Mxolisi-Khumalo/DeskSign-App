@@ -1,0 +1,38 @@
+<div class="w-full max-w-3xl mx-auto mt-10 p-6 bg-white rounded-xl shadow-lg border border-slate-100">
+    
+    <div class="mb-6 text-center">
+        <h2 class="text-2xl font-bold text-slate-800">Upload Document</h2>
+        <p class="text-slate-500">Supported formats: PDF, DOCX</p>
+    </div>
+
+    <!-- 
+      PrimeNG File Upload Component 
+      mode="advanced": Shows the full UI with drag/drop
+      customUpload="true": Lets us handle the logic manually
+      accept="application/pdf": Restricts to PDFs
+    -->
+    <p-toast></p-toast>
+    
+    <div class="card">
+        <p-fileUpload 
+            name="docs[]" 
+            chooseLabel="Choose PDF"
+            uploadLabel="Upload"
+            cancelLabel="Cancel"
+            [customUpload]="true" 
+            (uploadHandler)="customUpload($event)" 
+            [multiple]="false" 
+            accept="application/pdf" 
+            maxFileSize="10000000">
+            
+            <!-- Custom Empty Template (What shows before you drop a file) -->
+            <ng-template pTemplate="content">
+                <div class="flex flex-col items-center justify-center py-10" *ngIf="!uploadedFiles?.length">
+                    <i class="pi pi-cloud-upload text-6xl text-slate-300 mb-4"></i>
+                    <p class="text-slate-600">Drag and drop your PDF here to start signing</p>
+                </div>
+            </ng-template>
+
+        </p-fileUpload>
+    </div>
+</div>
