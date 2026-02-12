@@ -4,21 +4,21 @@ import { Router } from '@angular/router';
 import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 import { ButtonModule } from 'primeng/button';
 import { DocumentService } from '../../services/document';
-import { DragDropModule, CdkDragEnd } from '@angular/cdk/drag-drop';
+import { DragDropModule, CdkDragEnd, CdkDragStart } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog'; 
 import { TabsModule } from 'primeng/tabs';
 import { InputTextModule } from 'primeng/inputtext';
 import SignaturePad from 'signature_pad';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 interface DocField {
   id: number;
   type: 'signature' | 'initials' | 'text' | 'date';
-  x: number;
-  y: number;
-  page?: number; 
-  value?: string; // For text fields
+  x: number; // Relative to the PDF PAGE, not the container
+  y: number; // Relative to the PDF PAGE
+  page: number; // The page number this field belongs to
+  value?: string; 
 }
 
 @Component({
@@ -30,10 +30,22 @@ interface DocField {
 })
 
 export class DocumentPreview implements OnInit {
-  pdfSrc: any = null; // This will hold the PDF data
+  pdfSrc: any = null; 
   private originalPdfBytes: Uint8Array | null = null;
   zoom = '100%';
   isLoading = true;
+  isDragging = false;
+
+  fields: DocField[] = [];
+
+  @ViewChild('mainContainer') mainContainer!: ElementRef;
+  @ViewChild('signatureCanvas') signatureCanvas!: ElementRef<HTMLCanvasElement>;
+  
+  private signaturePadInstance!: SignaturePad;
+
+  displaySignDialog: boolean = false;
+  activeFieldId: number | null = null;
+  typedSignature: string = '';
 
   constructor(
     private documentService: DocumentService, 
@@ -47,10 +59,9 @@ export class DocumentPreview implements OnInit {
     if (file) {
       const reader = new FileReader();
       reader.onload = (e: any) => {
-        // convert pdf data to Uint8Array for the PDF viewer to read the file data
         this.pdfSrc = new Uint8Array(e.target.result);
         this.originalPdfBytes = new Uint8Array(e.target.result).slice();
-        this.cdr.detectChanges(); // updates preview after loading pdf
+        this.cdr.detectChanges(); 
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -80,52 +91,94 @@ export class DocumentPreview implements OnInit {
     }
   }
 
-  resetZoom() {
-    this.zoom = '100%';
+  onDragStart() {
+    this.isDragging = true;
   }
 
-  fields: DocField[] = [];
-
-  // Reference to the main container so we can calculate relative coordinates
-  @ViewChild('mainContainer') mainContainer!: ElementRef;
-
+  /**
+   * CRITICAL FIX: Coordinate Calculation
+   * We calculate coordinates relative to the specific PDF Page element in the DOM.
+   */
   onDragEnded(event: CdkDragEnd, type: 'signature' | 'date') {
-    const element = event.source.getRootElement();
-    const boundingClientRect = element.getBoundingClientRect();
-    const parentPosition = this.mainContainer.nativeElement.getBoundingClientRect();
+    const dropPoint = event.dropPoint; // Screen coordinates {x, y}
 
-     // Get the current scroll amount
-    const scrollOffset = this.mainContainer.nativeElement.scrollTop;
+    // 1. Find the specific PDF page element under the mouse
+    // ngx-extended-pdf-viewer renders pages with class 'page' and data-page-number
+    const elements = document.elementsFromPoint(dropPoint.x, dropPoint.y);
+    const pageElement = elements.find(el => el.classList.contains('page')) as HTMLElement;
 
-    // Calculate x/y relative to the PDF container
-    const x = boundingClientRect.x - parentPosition.x;
-    const y = (boundingClientRect.y - parentPosition.y) + scrollOffset; 
+    if (!pageElement) {
+      console.warn("Dropped outside of a PDF page");
+      event.source.reset();
+      this.isDragging = false;
+      return;
+    }
 
-    // Add a new field to our array
+    // 2. Get the Page Number and Dimensions
+    const pageNumber = parseInt(pageElement.getAttribute('data-page-number') || '1');
+    const pageRect = pageElement.getBoundingClientRect();
+
+    // 3. Calculate X/Y relative to that specific page
+    // This solves the "Scrolling" and "Floating" issue because we save the position relative to the page itself.
+    const relativeX = dropPoint.x - pageRect.left;
+    const relativeY = dropPoint.y - pageRect.top;
+
     this.fields.push({
       id: Date.now(),
       type: type,
-      x: x,
-      y: y,
-      page: 1
+      x: relativeX,
+      y: relativeY,
+      page: pageNumber,
+      value: ''
     });
-    console.log(`Added ${type} field at (${x}, ${y})`);
-    event.source.reset(); // Reset the position of the dragged element
+    
+    event.source.reset(); 
+    
+    setTimeout(() => {
+        this.isDragging = false;
+    }, 100);
+  }
+
+  /**
+   * Helper to get the absolute style for the UI overlay
+   * This places the field correctly on top of the correct page
+   */
+  getFieldStyle(field: DocField) {
+    // We need to find the current location of the page in the DOM
+    const pageElement = document.querySelector(`.page[data-page-number="${field.page}"]`) as HTMLElement;
+    
+    if (!pageElement) return { display: 'none' };
+
+    // Since our #mainContainer is 'relative', we need to calculate the position relative to it
+    // Or simpler: We can rely on the fact that if the overlay is absolute inside mainContainer,
+    // we just need the offset of the page relative to the mainContainer.
+    
+    // However, the cleanest UI fix for "floating" is to force a re-render or check positions.
+    // A simplified approach for the UI Preview:
+    // We add the Page's OffsetTop to the Field's Y
+    
+    const containerRect = this.mainContainer.nativeElement.getBoundingClientRect();
+    const pageRect = pageElement.getBoundingClientRect();
+    
+    // Offset of the page relative to the container
+    const pageOffsetX = pageRect.left - containerRect.left + this.mainContainer.nativeElement.scrollLeft;
+    const pageOffsetY = pageRect.top - containerRect.top + this.mainContainer.nativeElement.scrollTop;
+
+    return {
+        top: `${pageOffsetY + field.y}px`,
+        left: `${pageOffsetX + field.x}px`,
+        width: '200px',
+        height: '60px',
+        position: 'absolute'
+    };
   }
 
   deleteField(index: number) {
     this.fields.splice(index, 1);
   }
 
-  @ViewChild('signatureCanvas') signatureCanvas!: ElementRef<HTMLCanvasElement>;
-  private signaturePadInstance!: SignaturePad;
-
-  displaySignDialog: boolean = false;
-  activeFieldId: number | null = null;
-  typedSignature: string = '';
-
   openSignDialog(field: DocField) {
-    if (field.type === 'signature') {
+    if (!this.isDragging && field.type === 'signature') {
       this.activeFieldId = field.id;
       this.displaySignDialog = true;
       this.typedSignature = '';
@@ -133,41 +186,30 @@ export class DocumentPreview implements OnInit {
   }
 
   initSignaturePad() {
-    // We use setTimeout to ensure the DOM is rendered inside the modal
     setTimeout(() => {
         if (this.signatureCanvas && !this.signaturePadInstance) {
             const canvas = this.signatureCanvas.nativeElement;
-            
-            // Handle High DPI screens (Retina displays) so ink isn't blurry
             const ratio = Math.max(window.devicePixelRatio || 1, 1);
             canvas.width = canvas.offsetWidth * ratio;
             canvas.height = canvas.offsetHeight * ratio;
             canvas.getContext("2d")!.scale(ratio, ratio);
 
-            this.signaturePadInstance = new SignaturePad(canvas, {
-                backgroundColor: 'rgba(255, 255, 255, 0)', // Transparent
-                penColor: 'black'
-            });
+            this.signaturePadInstance = new SignaturePad(canvas, { backgroundColor: 'rgba(255, 255, 255, 0)', penColor: 'black' });
         } else if (this.signaturePadInstance) {
-            this.signaturePadInstance.clear(); // Reset if reopening
+            this.signaturePadInstance.clear(); 
         }
     }, 100);
   }
 
-  // 5. UPDATE: Apply Drawing logic
   applyDrawing() {
     if (this.activeFieldId && this.signaturePadInstance && !this.signaturePadInstance.isEmpty()) {
-      // Get image from the instance
-      const base64Data = this.signaturePadInstance.toDataURL(); 
-      this.updateField(base64Data);
+      this.updateField(this.signaturePadInstance.toDataURL());
     }
   }
 
   updateField(value: string) {
     const index = this.fields.findIndex(f => f.id === this.activeFieldId);
-    if (index !== -1) {
-      this.fields[index].value = value;
-    }
+    if (index !== -1) this.fields[index].value = value;
     this.displaySignDialog = false;
   }
 
@@ -178,77 +220,87 @@ export class DocumentPreview implements OnInit {
   }
 
   clearPad() {
-    if (this.signaturePadInstance) {
-        this.signaturePadInstance.clear();
-    }
+    if (this.signaturePadInstance) this.signaturePadInstance.clear();
   }
 
   async finishSigning() {
-    if (!this.originalPdfBytes) return
+    if (!this.originalPdfBytes) return;
     this.isLoading = true;
 
     try {
         const pdfDoc = await PDFDocument.load(this.originalPdfBytes);
+        pdfDoc.registerFontkit(await import('@pdf-lib/fontkit').then(m => m.default));
+
+        // 1. Load Font (Fixing the 404 and Font format error)
+        let customFont;
+        try {
+            const fontBytes = await fetch('https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf').then(res => res.arrayBuffer());
+            customFont = await pdfDoc.embedFont(fontBytes);
+        } catch (e) {
+            console.warn('Fallback to standard font');
+            customFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        }
+
         const pages = pdfDoc.getPages();
-        const firstPage = pages[0]; // Assuming page 1 for now
-        
-        // Get PDF Dimensions
-        const { width, height } = firstPage.getSize();
 
-        // Get HTML Container Dimensions (to calculate scale)
-        // For this demo, we use a simplified coordinate mapping
-        const containerWidth = this.mainContainer.nativeElement.scrollWidth;
-        const scaleFactor = width / containerWidth;
-
-        // B. Loop through fields and embed them
         for (const field of this.fields) {
             if (!field.value) continue;
 
-            // Calculate PDF Coordinates
-            // We multiply by scaleFactor to match PDF resolution.
+            const pdfPage = pages[field.page - 1]; // Pages are 0-indexed in pdf-lib
+            if (!pdfPage) continue;
+
+            const { width: pdfWidth, height: pdfHeight } = pdfPage.getSize();
+
+            // 2. Get the DOM Element for this specific page to calculate scale
+            const pageDomElement = document.querySelector(`.page[data-page-number="${field.page}"]`) as HTMLElement;
+            if (!pageDomElement) continue;
+
+            const renderedWidth = pageDomElement.clientWidth; // Width on screen (px)
+            const scaleFactor = pdfWidth / renderedWidth; // Conversion ratio
+
+            // 3. Convert Coordinates
+            // HTML: (0,0) is Top-Left. PDF: (0,0) is Bottom-Left.
+            // We use the field.x/y which we stored relative to the page top-left.
             const pdfX = field.x * scaleFactor;
-            const pdfY = height - (field.y * scaleFactor) - (60 * scaleFactor); // Subtract height of the field box
+            const pdfY = pdfHeight - (field.y * scaleFactor) - (60 * scaleFactor); // Subtract height of field
 
             if (field.type === 'signature' && field.value.startsWith('data:image')) {
-                // Embed PNG
                 const pngImage = await pdfDoc.embedPng(field.value);
-                firstPage.drawImage(pngImage, {
+                pdfPage.drawImage(pngImage, {
                     x: pdfX,
                     y: pdfY,
-                    width: 200 * scaleFactor, // Match the CSS width (200px)
-                    height: 60 * scaleFactor  // Match the CSS height (60px)
+                    width: 200 * scaleFactor, 
+                    height: 60 * scaleFactor  
                 });
             } 
             else {
-                // Handle Text or Date
+                // Text / Date
                 const textValue = field.value || (field.type === 'date' ? new Date().toISOString().split('T')[0] : '');
                 
-                // Add a check to ensure we aren't drawing empty text
                 if(textValue) {
-                  firstPage.drawText(textValue, {
-                      x: pdfX + 10,
-                      y: pdfY + 20,
-                      size: 12 * scaleFactor, // Reduced size (24 might be too big depending on scale)
+                  pdfPage.drawText(textValue, {
+                      x: pdfX + (10 * scaleFactor),
+                      y: pdfY + (15 * scaleFactor), // Adjust baseline
+                      size: 24 * scaleFactor,
+                      font: customFont, // <--- CRITICAL: Pass the font here
                       color: rgb(0, 0, 0),
                   });
                 }
             }
         }
 
-        // C. Save and Download
         const pdfBytes = await pdfDoc.save();
         this.triggerDownload(pdfBytes, 'signed_document.pdf');
 
     } catch (error) {
-        console.error("Error signing document:", error);
-        alert("There was an error creating the PDF.");
+        console.error("Error signing:", error);
+        alert("Error creating PDF.");
     } finally {
         this.isLoading = false;
         this.cdr.detectChanges();
     }
   }
 
-  // Helper to trigger browser download
   triggerDownload(data: Uint8Array, filename: string) {
     const blob = new Blob([data as any], { type: 'application/pdf' });
     const url = window.URL.createObjectURL(blob);
@@ -260,5 +312,4 @@ export class DocumentPreview implements OnInit {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   }
-
 }

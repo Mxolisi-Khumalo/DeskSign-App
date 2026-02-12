@@ -87,18 +87,18 @@
                     'bg-yellow-100 border-yellow-400 border-dashed': !field.value, 
                     'bg-transparent border-transparent': field.value
                 }"
-                [style.top.px]="field.y"
-                [style.left.px]="field.x"
-                [style.width.px]="200"
-                [style.height.px]="60"
+                [ngStyle]="getFieldStyle(field)" 
                 (click)="openSignDialog(field)"
-                cdkDrag>
+                cdkDrag
+                (cdkDragStarted)="onDragStart()" 
+                (cdkDragEnded)="isDragging = false"> 
                 
+                <!-- Content inside remains exactly the same as before -->
                 <div *ngIf="!field.value && field.type === 'signature'" class="flex items-center text-yellow-800 font-semibold">
                     <span class="text-xs bg-yellow-200 px-1 rounded mr-2">Sign</span>
                     <span class="text-sm italic text-gray-400">Sign Here</span>
                 </div>
-
+                
                 <div *ngIf="!field.value && field.type === 'date'" class="flex items-center text-yellow-800 font-semibold">
                     <span class="text-xs bg-yellow-200 px-1 rounded mr-2">Date</span>
                     <span class="text-sm italic text-gray-400">Today's Date</span>
@@ -112,9 +112,6 @@
                     <span class="font-cursive text-2xl text-black">{{ field.value }}</span>
                 </div>
                 
-                <!-- Date Auto-fill Preview -->
-                 <div *ngIf="field.type === 'date' && !field.value" class="hidden"></div>
-
                 <button 
                     (mousedown)="$event.stopPropagation()" 
                     (click)="deleteField(i); $event.stopPropagation()"
