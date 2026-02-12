@@ -37,7 +37,6 @@ export class DocumentUpload {
     }
   }
 
-  // Custom function if we want to bypass PrimeNG's auto upload and do it manually
   customUpload(event: any) {
      const file = event.files[0];
      this.documentService.setFile(file); // Store the file in our service for access in the preview page
