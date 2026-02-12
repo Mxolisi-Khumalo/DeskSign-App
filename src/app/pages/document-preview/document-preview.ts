@@ -1,46 +1,68 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { PdfViewerModule } from 'ng2-pdf-viewer'; // Import the PDF module
+import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 import { ButtonModule } from 'primeng/button';
 import { DocumentService } from '../../services/document';
 
 @Component({
   selector: 'app-document-preview',
   standalone: true,
-  imports: [CommonModule, PdfViewerModule, ButtonModule],
+  imports: [CommonModule, ButtonModule, NgxExtendedPdfViewerModule],
   templateUrl: './document-preview.html',
   styleUrl: './document-preview.css',
 })
 export class DocumentPreview implements OnInit {
   pdfSrc: any = null; // This will hold the PDF data
-  zoom = 1.0;
+  zoom = '100%';
   isLoading = true;
 
-  constructor(private documentService: DocumentService, private router: Router) {}
+  constructor(
+    private documentService: DocumentService, 
+    private router: Router,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit() {
-    // Example of using the service to get the uploaded file
     const file = this.documentService.getFile();
 
     if (file) {
       const reader = new FileReader();
       reader.onload = (e: any) => {
-        // We use Uint8Array which works robustly with ng2-pdf-viewer
+        // convert pdf data to Uint8Array for the PDF viewer to read the file data
         this.pdfSrc = new Uint8Array(e.target.result);
-        this.isLoading = false;
-        console.log("PDF Data loaded");
+        this.cdr.detectChanges(); // updates preview after loading pdf
       };
       reader.readAsArrayBuffer(file);
     } else {
-      console.error("No file found in service");
       this.router.navigate(['/']);
     }
   }
 
-  zoomIn() {this.zoom += 0.1;}
+  onPdfLoaded() {
+    console.log("PDF loaded successfully");
+    this.isLoading = false;
+    this.cdr.detectChanges();
+  }
 
-  zoomOut() { if (this.zoom > 0.5) { this.zoom -= 0.1;} }
+  zoomIn() {
+    let currentZoom = parseInt(this.zoom);
+    if (currentZoom < 200) {
+      currentZoom += 10;
+      this.zoom = currentZoom + '%';
+    }
+  }
 
-  resetZoom() { this.zoom = 1.0;}
+  zoomOut() {
+    let currentZoom = parseInt(this.zoom);
+    if (currentZoom > 50) {
+      currentZoom -= 10;
+      this.zoom = currentZoom + '%';
+    }
+  }
+
+  resetZoom() {
+    this.zoom = '100%';
+  }
+
 }
