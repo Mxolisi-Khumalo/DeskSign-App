@@ -4,13 +4,6 @@
         <h2 class="text-2xl font-bold text-slate-800">Upload Document</h2>
         <p class="text-slate-500">Supported formats: PDF, DOCX</p>
     </div>
-
-    <!-- 
-      PrimeNG File Upload Component 
-      mode="advanced": Shows the full UI with drag/drop
-      customUpload="true": Lets us handle the logic manually
-      accept="application/pdf": Restricts to PDFs
-    -->
     <p-toast></p-toast>
     
     <div class="card">
@@ -26,18 +19,12 @@
             accept="application/pdf" 
             maxFileSize="10000000">
             
-            <!-- 
-                FIX 3: Use PrimeNG's 'content' template properly.
-                'let-files' gives us access to the files inside the template.
-            -->
             <ng-template pTemplate="content" let-files>
-                <!-- Show this ONLY if there are NO files selected -->
                 <div *ngIf="!files || files.length === 0" class="flex flex-col items-center justify-center py-10">
                     <i class="pi pi-cloud-upload text-6xl text-slate-300 mb-4"></i>
                     <p class="text-slate-600">Drag and drop your PDF here</p>
                 </div>
 
-                <!-- Show this if there ARE files selected (Visual Feedback) -->
                 <div *ngIf="files && files.length > 0" class="p-4">
                     <div *ngFor="let file of files" class="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <i class="pi pi-file-pdf text-red-500 text-xl mr-3"></i>

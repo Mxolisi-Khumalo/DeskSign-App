@@ -1,17 +1,12 @@
 /* You can add global styles to this file, and also import other style files */
 
 @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&display=swap');
-
 @import "tailwindcss";
-
 @import "primeicons/primeicons.css";
 
 @layer tailwind-base, primeng, utilities;
-
-/* Link Tailwind to the base layer (Specific to Tailwind v4) */
 @layer tailwind-base {
   @theme {
-    /* You can put theme overrides here if needed */
   }
 }
 
