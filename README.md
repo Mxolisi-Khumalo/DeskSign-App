@@ -1,59 +1,109 @@
-# DeskSignApp
+***
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.1.3.
+# DeskSign App
 
-## Development server
+**DeskSign** is a modern, frontend-only document signing application built with **Angular**. It allows users to upload PDF documents, drag-and-drop signature fields, sign electronically (via drawing or typing), and download the finalized, flattened PDF with the signatures embedded.
 
-To start a local development server, run:
+It mimics the core functionality of tools like DocuSign or Adobe Sign, running entirely in the browser without a backend server for document processing.
 
-```bash
-ng serve
+![Angular](https://img.shields.io/badge/Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![PrimeNG](https://img.shields.io/badge/PrimeNG-2ca44b?style=for-the-badge&logo=primeng&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+
+## Features
+
+*   ** PDF Upload & Preview:** High-fidelity PDF rendering using `ngx-extended-pdf-viewer`.
+*   **point_of_interaction Drag & Drop Interface:** Drag signature and date placeholders from the sidebar onto the document using Angular CDK.
+*   ** Interactive Signing:**
+    *   **Draw:** Use the mouse/touchpad to draw a signature (powered by `signature_pad`).
+    *   **Type:** Type a name and automatically convert it to a cursive signature style.
+*   ** Client-Side Processing:** No server required. All PDF manipulation happens in the browser using `pdf-lib`.
+*   ** PDF Embedding:** "Burns" images and text directly into the PDF coordinates upon finishing, creating a flattened, secure document.
+*   ** Modern UI:** Styled with Tailwind CSS and PrimeNG components (Aura theme).
+
+## Tech Stack
+
+*   **Framework:** Angular 17+ (Standalone Components)
+*   **Styling:** Tailwind CSS, PrimeNG, PrimeIcons
+*   **PDF Rendering:** `ngx-extended-pdf-viewer`
+*   **PDF Manipulation:** `pdf-lib`, `@pdf-lib/fontkit`
+*   **Drag & Drop:** `@angular/cdk`
+*   **Signature Canvas:** `signature_pad` (Native implementation)
+
+## Getting Started
+
+Follow these instructions to get the project up and running on your local machine.
+
+### Prerequisites
+
+*   **Node.js** (v18 or higher recommended)
+*   **Angular CLI** (`npm install -g @angular/cli`)
+
+### Installation
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/DeskSign-App.git
+    cd DeskSign-App
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **Run the development server:**
+    ```bash
+    ng serve
+    ```
+
+4.  **Open your browser:**
+    Navigate to `http://localhost:4200/`.
+
+## Configuration Notes
+
+### Asset Configuration
+This project relies on `ngx-extended-pdf-viewer` which requires specific assets to be copied to the build folder. This is already configured in `angular.json` under `architect > build > options > assets`:
+
+```json
+"assets": [
+  {
+    "glob": "**/*",
+    "input": "public"
+  },
+  {
+    "glob": "**/*",
+    "input": "node_modules/ngx-extended-pdf-viewer/assets/",
+    "output": "/assets/"
+  }
+]
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+If you encounter 404 errors regarding `pdf.worker.mjs`, ensure this configuration exists.
 
-## Code scaffolding
+## How to Use
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+1.  **Upload:** Click "Choose PDF" on the dashboard to upload a document.
+2.  **Prepare:**
+    *   Drag the **"Signature"** or **"Date"** block from the left sidebar.
+    *   Drop it anywhere on the PDF page.
+    *   (Optional) Click the Red 'X' to remove a field.
+3.  **Sign:**
+    *   Click on a placed **Signature** block.
+    *   A dialog will open. Choose to **Draw** your signature or **Type** it.
+    *   Click "Apply".
+4.  **Finish:**
+    *   Click the green **"Finish"** button in the top right.
+    *   The app will process the document and automatically download `signed_document.pdf` with your signatures embedded.
 
-```bash
-ng generate component component-name
-```
+## Future Improvements
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+*   Support for Multi-page Drag & Drop (Currently optimized for Page 1).
+*   Resize handles for signature blocks.
+*   Backend integration for saving document history.
+*   Authentication for user accounts.
 
-```bash
-ng generate --help
-```
+## Contributing
 
-## Building
-
-To build the project run:
-
-```bash
-ng build
-```
-
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+Contributions are welcome! Please feel free to submit a Pull Request.
