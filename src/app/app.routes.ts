@@ -1,9 +1,14 @@
 import { Routes } from '@angular/router';
-import { Dashboard } from './pages/dashboard/dashboard';
-import { DocumentPreview } from './pages/document-preview/document-preview';
 
 export const routes: Routes = [
-  { path: '', component: Dashboard },
-  {path: 'preview', component: DocumentPreview},
-  { path: '**', redirectTo: '' }
+  {
+    path: '',
+    loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.Dashboard),
+  },
+  {
+    path: 'preview',
+    loadComponent: () =>
+      import('./pages/document-preview/document-preview').then((m) => m.DocumentPreview),
+  },
+  { path: '**', redirectTo: '' },
 ];

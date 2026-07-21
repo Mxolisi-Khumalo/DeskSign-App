@@ -1,109 +1,102 @@
-***
+# DeskSign
 
-# DeskSign App
+**DeskSign** is a modern, frontend-only document-signing application built with **Angular 21**. Upload a PDF, drag signature/initials/text/date fields onto it, sign by drawing or typing, and download a flattened PDF with everything embedded — all in the browser, with no backend.
 
-**DeskSign** is a modern, frontend-only document signing application built with **Angular**. It allows users to upload PDF documents, drag-and-drop signature fields, sign electronically (via drawing or typing), and download the finalized, flattened PDF with the signatures embedded.
-
-It mimics the core functionality of tools like DocuSign or Adobe Sign, running entirely in the browser without a backend server for document processing.
-
-![Angular](https://img.shields.io/badge/Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
-![PrimeNG](https://img.shields.io/badge/PrimeNG-2ca44b?style=for-the-badge&logo=primeng&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![Angular](https://img.shields.io/badge/Angular-21-DD0031?style=for-the-badge&logo=angular&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![PrimeNG](https://img.shields.io/badge/PrimeNG-21-2ca44b?style=for-the-badge&logo=primeng&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
 
 ## Features
 
-*   ** PDF Upload & Preview:** High-fidelity PDF rendering using `ngx-extended-pdf-viewer`.
-*   **point_of_interaction Drag & Drop Interface:** Drag signature and date placeholders from the sidebar onto the document using Angular CDK.
-*   ** Interactive Signing:**
-    *   **Draw:** Use the mouse/touchpad to draw a signature (powered by `signature_pad`).
-    *   **Type:** Type a name and automatically convert it to a cursive signature style.
-*   ** Client-Side Processing:** No server required. All PDF manipulation happens in the browser using `pdf-lib`.
-*   ** PDF Embedding:** "Burns" images and text directly into the PDF coordinates upon finishing, creating a flattened, secure document.
-*   ** Modern UI:** Styled with Tailwind CSS and PrimeNG components (Aura theme).
+- **PDF upload & preview** — high-fidelity rendering via `ngx-extended-pdf-viewer`.
+- **Drag & drop fields** — signature, initials, text and date placeholders, positioned with Angular CDK.
+- **Interactive signing** — draw with the pointer (`signature_pad`) or type a name rendered in a cursive font.
+- **100% client-side** — all PDF manipulation happens locally with `pdf-lib`; nothing is uploaded.
+- **Flattened output** — signatures are burned into the page coordinates, producing a secure, flattened `signed_document.pdf`.
+- **Modern UI** — Tailwind CSS v4 + PrimeNG (Aura theme), with toast notifications for feedback.
 
-## Tech Stack
+## Tech stack
 
-*   **Framework:** Angular 17+ (Standalone Components)
-*   **Styling:** Tailwind CSS, PrimeNG, PrimeIcons
-*   **PDF Rendering:** `ngx-extended-pdf-viewer`
-*   **PDF Manipulation:** `pdf-lib`, `@pdf-lib/fontkit`
-*   **Drag & Drop:** `@angular/cdk`
-*   **Signature Canvas:** `signature_pad` (Native implementation)
+- **Framework:** Angular 21 (standalone components, signals, lazy-loaded routes)
+- **Styling:** Tailwind CSS v4, PrimeNG, PrimeIcons
+- **PDF rendering:** `ngx-extended-pdf-viewer`
+- **PDF manipulation:** `pdf-lib`, `@pdf-lib/fontkit`
+- **Drag & drop:** `@angular/cdk`
+- **Signature canvas:** `signature_pad`
+- **Tooling:** ESLint (angular-eslint, flat config), Prettier, Vitest
 
-## Getting Started
-
-Follow these instructions to get the project up and running on your local machine.
+## Getting started
 
 ### Prerequisites
 
-*   **Node.js** (v18 or higher recommended)
-*   **Angular CLI** (`npm install -g @angular/cli`)
+- **Node.js** 20 or higher
+- **npm** 10 or higher
 
-### Installation
+### Install & run
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/DeskSign-App.git
-    cd DeskSign-App
-    ```
-
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-
-3.  **Run the development server:**
-    ```bash
-    ng serve
-    ```
-
-4.  **Open your browser:**
-    Navigate to `http://localhost:4200/`.
-
-## Configuration Notes
-
-### Asset Configuration
-This project relies on `ngx-extended-pdf-viewer` which requires specific assets to be copied to the build folder. This is already configured in `angular.json` under `architect > build > options > assets`:
-
-```json
-"assets": [
-  {
-    "glob": "**/*",
-    "input": "public"
-  },
-  {
-    "glob": "**/*",
-    "input": "node_modules/ngx-extended-pdf-viewer/assets/",
-    "output": "/assets/"
-  }
-]
+```bash
+npm install
+npm start          # dev server at http://localhost:4200/
 ```
 
-If you encounter 404 errors regarding `pdf.worker.mjs`, ensure this configuration exists.
+### Scripts
 
-## How to Use
+| Script                 | Description                                  |
+| ---------------------- | -------------------------------------------- |
+| `npm start`            | Run the dev server                           |
+| `npm run build`        | Production build (bundle budgets enforced)   |
+| `npm test`             | Run the unit tests (Vitest)                  |
+| `npm run lint`         | Lint TypeScript + templates (ESLint)         |
+| `npm run format`       | Format the codebase with Prettier            |
+| `npm run format:check` | Verify formatting without writing changes    |
 
-1.  **Upload:** Click "Choose PDF" on the dashboard to upload a document.
-2.  **Prepare:**
-    *   Drag the **"Signature"** or **"Date"** block from the left sidebar.
-    *   Drop it anywhere on the PDF page.
-    *   (Optional) Click the Red 'X' to remove a field.
-3.  **Sign:**
-    *   Click on a placed **Signature** block.
-    *   A dialog will open. Choose to **Draw** your signature or **Type** it.
-    *   Click "Apply".
-4.  **Finish:**
-    *   Click the green **"Finish"** button in the top right.
-    *   The app will process the document and automatically download `signed_document.pdf` with your signatures embedded.
+## How to use
 
-## Future Improvements
+1. **Upload** a PDF on the dashboard.
+2. **Prepare:** drag a **Signature**, **Initials**, **Text** or **Date** field from the sidebar onto the page. Reposition by dragging; remove with the red ✕.
+3. **Sign:** click a Signature/Initials field, then **Draw** or **Type**, and **Apply**.
+4. **Finish:** click **Finish** to download `signed_document.pdf` with everything embedded.
 
-*   Support for Multi-page Drag & Drop (Currently optimized for Page 1).
-*   Resize handles for signature blocks.
-*   Backend integration for saving document history.
-*   Authentication for user accounts.
+## Architecture
 
-## Contributing
+```
+src/app/
+├── models/
+│   └── signature-field.ts     # domain types + field size constants
+├── services/
+│   ├── document.ts            # signal-based holder for the selected file
+│   └── pdf-signing.ts         # all pdf-lib embedding + coordinate mapping (testable)
+├── components/
+│   └── document-upload/       # PrimeNG file upload
+├── pages/
+│   ├── dashboard/             # landing page (lazy-loaded)
+│   └── document-preview/      # viewer, field placement, signing dialog (lazy-loaded)
+└── app.routes.ts              # lazy routes
+```
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Design notes:
+
+- **Signals** drive component state; DI uses the `inject()` function throughout.
+- **Lazy routes** keep the heavy PDF stack out of the initial bundle (initial ≈ 470 kB; the preview page and fontkit load on demand).
+- **`PdfSigningService`** isolates PDF/coordinate logic from the UI, with pure, unit-tested coordinate mapping (`mapFieldToPdf`).
+- The cursive signature font (**Great Vibes**, OFL) is bundled under `public/assets/fonts/` and loaded locally — no runtime dependency on an external CDN.
+
+## Testing
+
+```bash
+npm test
+```
+
+Vitest runs in a jsdom environment; `src/test-setup.ts` polyfills the browser APIs (`ResizeObserver`, `IntersectionObserver`, `matchMedia`) that PrimeNG and the PDF viewer expect.
+
+## Roadmap
+
+- Keyboard-accessible field placement (currently pointer-only; a11y lint rules are relaxed to warnings for the drag surface).
+- Resize handles for placed fields.
+- Multi-file / document history.
+
+## Credits
+
+- Cursive font: [Great Vibes](https://fonts.google.com/specimen/Great+Vibes) by TypeSETit, licensed under the SIL Open Font License (see `public/assets/fonts/OFL.txt`).
+- Inspired by the classic e-signature tools (DocuSign, Adobe Sign).
