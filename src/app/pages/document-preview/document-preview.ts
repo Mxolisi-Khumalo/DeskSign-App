@@ -4,33 +4,48 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  HostListener,
   computed,
+  effect,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
+import { NgxExtendedPdfViewerModule, PagesLoadedEvent } from 'ngx-extended-pdf-viewer';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { TabsModule } from 'primeng/tabs';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToastModule } from 'primeng/toast';
+import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 import { CdkDragEnd, DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import SignaturePad from 'signature_pad';
 
 import { DocumentService } from '../../services/document';
-import { PageGeometry, PdfSigningService } from '../../services/pdf-signing';
-import { FIELD_HEIGHT, FIELD_WIDTH, FieldType, SignatureField } from '../../models/signature-field';
+import { PdfSigningService, SignResult } from '../../services/pdf-signing';
+import {
+  FIELD_META,
+  FIELD_TYPES,
+  FieldType,
+  MIN_FIELD_NORM,
+  SignatureField,
+  isTextInput,
+} from '../../models/signature-field';
 
-type DialogMode = 'signature' | 'initials';
+type DialogTab = 'draw' | 'type' | 'upload';
 type FieldStyle = Record<string, string>;
 
-const MIN_ZOOM = 50;
-const MAX_ZOOM = 200;
-const ZOOM_STEP = 10;
+interface SavedState {
+  fields: SignatureField[];
+  signerName: string;
+  signerEmail: string;
+}
+
+const STORAGE_PREFIX = 'desksign:v2:';
+const HISTORY_LIMIT = 50;
 
 @Component({
   selector: 'app-document-preview',
@@ -44,6 +59,7 @@ const ZOOM_STEP = 10;
     TabsModule,
     InputTextModule,
     ToastModule,
+    TooltipModule,
   ],
   providers: [MessageService],
   templateUrl: './document-preview.html',
@@ -60,64 +76,62 @@ export class DocumentPreview implements AfterViewInit {
   private readonly mainContainer = viewChild.required<ElementRef<HTMLElement>>('mainContainer');
   private readonly signatureCanvas = viewChild<ElementRef<HTMLCanvasElement>>('signatureCanvas');
 
-  // ---- Reactive state -----------------------------------------------------
+  readonly fieldTypes = FIELD_TYPES;
+  readonly fieldMeta = FIELD_META;
+
+  // ---- Document + viewer state -------------------------------------------
   readonly pdfSrc = signal<Uint8Array | null>(null);
   readonly isLoading = signal(true);
-  readonly isDragging = signal(false);
-  readonly zoom = signal(100);
-  readonly zoomLabel = computed(() => `${this.zoom()}%`);
+  readonly fileName = signal('document.pdf');
+  readonly totalPages = signal(1);
+  readonly currentPage = signal(1);
+  readonly zoom = signal<string>('page-width');
+  readonly sidebarVisible = signal(false);
+  readonly darkMode = signal(false);
+
+  readonly zoomText = computed(() => {
+    const z = this.zoom();
+    return z.endsWith('%') ? z : 'Fit';
+  });
+
+  // ---- Fields + history --------------------------------------------------
   readonly fields = signal<SignatureField[]>([]);
+  readonly selectedId = signal<number | null>(null);
+  readonly highlightedId = signal<number | null>(null);
+  private past: SignatureField[][] = [];
+  private future: SignatureField[][] = [];
+  readonly canUndo = signal(false);
+  readonly canRedo = signal(false);
 
-  readonly displaySignDialog = signal(false);
-  readonly dialogMode = signal<DialogMode>('signature');
-  typedSignature = '';
-  initialsText = '';
+  readonly requiredTotal = computed(() => this.fields().filter((f) => f.required).length);
+  readonly requiredDone = computed(
+    () => this.fields().filter((f) => f.required && this.isFilled(f)).length,
+  );
+  readonly allRequiredDone = computed(() => this.requiredDone() === this.requiredTotal());
 
-  readonly fieldWidth = FIELD_WIDTH;
-  readonly fieldHeight = FIELD_HEIGHT;
+  // ---- Signer identity ---------------------------------------------------
+  signerName = '';
+  signerEmail = '';
 
-  /** Sidebar tools available to drag onto the document. */
-  readonly tools: readonly {
-    type: FieldType;
-    label: string;
-    icon: string;
-    color: string;
-    borderColor: string;
-  }[] = [
-    {
-      type: 'signature',
-      label: 'Signature',
-      icon: 'pi-pencil',
-      color: 'text-blue-500',
-      borderColor: 'border-blue-500',
-    },
-    {
-      type: 'initials',
-      label: 'Initials',
-      icon: 'pi-verified',
-      color: 'text-purple-500',
-      borderColor: 'border-purple-500',
-    },
-    {
-      type: 'text',
-      label: 'Text',
-      icon: 'pi-align-left',
-      color: 'text-green-500',
-      borderColor: 'border-green-500',
-    },
-    {
-      type: 'date',
-      label: 'Date Signed',
-      icon: 'pi-calendar',
-      color: 'text-orange-500',
-      borderColor: 'border-orange-500',
-    },
-  ];
+  // ---- Signing dialog ----------------------------------------------------
+  readonly showSignDialog = signal(false);
+  readonly dialogTab = signal<DialogTab>('draw');
+  readonly dialogField = signal<SignatureField | null>(null);
+  typedValue = '';
+  private signaturePad: SignaturePad | null = null;
+  readonly adoptedSignature = signal<string | null>(null);
+  readonly adoptedInitials = signal<string | null>(null);
+
+  // ---- Completion summary ------------------------------------------------
+  readonly showSummary = signal(false);
+  private lastSigned: SignResult | null = null;
+  readonly envelopeId = signal('');
 
   private originalPdfBytes: Uint8Array | null = null;
-  private activeFieldId: number | null = null;
-  private signaturePadInstance: SignaturePad | null = null;
-  private readonly pagePositionCache = new Map<number, { top: number; left: number }>();
+  private storageKey = '';
+  readonly isResizing = signal(false);
+  private resizing: { id: number; startX: number; startY: number; w: number; h: number } | null =
+    null;
 
   constructor() {
     const file = this.documentService.getFile();
@@ -125,34 +139,45 @@ export class DocumentPreview implements AfterViewInit {
       this.router.navigate(['/']);
       return;
     }
+    this.fileName.set(file.name);
+    this.storageKey = `${STORAGE_PREFIX}${file.name}:${file.size}`;
+    this.restore();
+
     file
       .arrayBuffer()
       .then((buffer) => {
         const bytes = new Uint8Array(buffer);
-        // Keep an independent copy for signing: the PDF viewer passes its bytes
-        // to a pdf.js worker, which transfers (detaches) the ArrayBuffer. A
-        // shared view would become empty and break signing at "Finish".
+        // Independent copy: the viewer transfers (detaches) its buffer to a worker.
         this.originalPdfBytes = bytes.slice();
         this.pdfSrc.set(bytes);
       })
       .catch(() => this.showError('Could not read the selected document.'));
+
+    // Autosave field layout + signer identity per document.
+    effect(() => {
+      const state: SavedState = {
+        fields: this.fields(),
+        signerName: this.signerName,
+        signerEmail: this.signerEmail,
+      };
+      this.persist(state);
+    });
   }
 
-  // ---- Lifecycle ----------------------------------------------------------
   ngAfterViewInit(): void {
     this.attachScrollListener();
-    this.destroyRef.onDestroy(() => this.signaturePadInstance?.off());
+    this.destroyRef.onDestroy(() => this.signaturePad?.off());
   }
 
   private attachScrollListener(): void {
     let cancelled = false;
     const tryAttach = (): void => {
       if (cancelled) return;
-      const viewerContainer = document.querySelector('#viewerContainer');
-      if (viewerContainer) {
+      const viewer = document.querySelector('#viewerContainer');
+      if (viewer) {
         const handler = (): void => this.cdr.detectChanges();
-        viewerContainer.addEventListener('scroll', handler, { passive: true });
-        this.destroyRef.onDestroy(() => viewerContainer.removeEventListener('scroll', handler));
+        viewer.addEventListener('scroll', handler, { passive: true });
+        this.destroyRef.onDestroy(() => viewer.removeEventListener('scroll', handler));
       } else {
         setTimeout(tryAttach, 300);
       }
@@ -161,113 +186,215 @@ export class DocumentPreview implements AfterViewInit {
     tryAttach();
   }
 
-  // ---- Viewer + zoom ------------------------------------------------------
-  onPdfLoaded(): void {
+  // ---- Viewer callbacks + navigation -------------------------------------
+  onPagesLoaded(event: PagesLoadedEvent): void {
     this.isLoading.set(false);
+    this.totalPages.set(event.pagesCount ?? 1);
     this.cdr.detectChanges();
+  }
+
+  prevPage(): void {
+    this.currentPage.set(Math.max(1, this.currentPage() - 1));
+  }
+
+  nextPage(): void {
+    this.currentPage.set(Math.min(this.totalPages(), this.currentPage() + 1));
+  }
+
+  onPageChange(page: number): void {
+    this.currentPage.set(page);
   }
 
   zoomIn(): void {
-    this.setZoom(this.zoom() + ZOOM_STEP);
+    this.stepZoom(10);
   }
 
   zoomOut(): void {
-    this.setZoom(this.zoom() - ZOOM_STEP);
+    this.stepZoom(-10);
   }
 
-  private setZoom(value: number): void {
-    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
-    if (clamped === this.zoom()) return;
-    this.zoom.set(clamped);
-    this.pagePositionCache.clear();
+  fitWidth(): void {
+    this.zoom.set('page-width');
     this.cdr.detectChanges();
   }
 
-  // ---- Field placement ----------------------------------------------------
-  onDragEnded(event: CdkDragEnd, type: FieldType, fieldId?: number): void {
-    const { x, y } = event.dropPoint;
-    const pageElement = document
-      .elementsFromPoint(x, y)
-      .find((el): el is HTMLElement => el.classList.contains('page'));
+  private stepZoom(delta: number): void {
+    const current = this.zoom().endsWith('%') ? parseInt(this.zoom(), 10) : 100;
+    const next = Math.min(250, Math.max(50, current + delta));
+    this.zoom.set(`${next}%`);
+    this.cdr.detectChanges();
+  }
 
-    if (!pageElement) {
-      event.source.reset();
-      this.isDragging.set(false);
+  toggleSidebar(): void {
+    this.sidebarVisible.update((v) => !v);
+  }
+
+  toggleDark(): void {
+    this.darkMode.update((v) => !v);
+    document.documentElement.classList.toggle('my-app-dark', this.darkMode());
+  }
+
+  // ---- Field placement ---------------------------------------------------
+  onSidebarDrop(event: CdkDragEnd, type: FieldType): void {
+    const placement = this.pageFromPoint(event.dropPoint);
+    event.source.reset();
+    if (!placement) return;
+
+    const { page, rect, relX, relY } = placement;
+    const meta = FIELD_META[type];
+    const w = meta.defaultPx.w / rect.width;
+    const h = meta.defaultPx.h / rect.height;
+    const field: SignatureField = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      type,
+      page,
+      x: this.clampNorm(relX / rect.width, w),
+      y: this.clampNorm(relY / rect.height, h),
+      w,
+      h,
+      required: meta.requiredByDefault,
+      value: this.defaultValue(type),
+      checked: type === 'checkbox' ? false : undefined,
+    };
+    this.commit([...this.fields(), field]);
+    this.selectedId.set(field.id);
+  }
+
+  onFieldMoved(event: CdkDragEnd, field: SignatureField): void {
+    const placement = this.pageFromPoint(event.dropPoint);
+    event.source.reset();
+    if (!placement) {
+      this.cdr.detectChanges();
       return;
     }
-
-    const pageNumber = Number(pageElement.getAttribute('data-page-number') ?? '1');
-    const pageRect = pageElement.getBoundingClientRect();
-    const relativeX = x - pageRect.left;
-    const relativeY = y - pageRect.top;
-
-    if (fieldId != null) {
-      this.moveField(fieldId, relativeX, relativeY, pageNumber, pageRect);
-    } else {
-      this.addField(type, relativeX, relativeY, pageNumber);
-    }
-
-    event.source.reset();
-    setTimeout(() => {
-      this.isDragging.set(false);
-      this.cdr.detectChanges();
-    }, 100);
-  }
-
-  private moveField(fieldId: number, x: number, y: number, page: number, pageRect: DOMRect): void {
-    this.fields.update((fields) =>
-      fields.map((f) => (f.id === fieldId ? { ...f, x, y, page } : f)),
+    const { page, rect, relX, relY } = placement;
+    this.commit(
+      this.fields().map((f) =>
+        f.id === field.id
+          ? {
+              ...f,
+              page,
+              x: this.clampNorm(relX / rect.width, f.w),
+              y: this.clampNorm(relY / rect.height, f.h),
+            }
+          : f,
+      ),
     );
-    const containerRect = this.mainContainer().nativeElement.getBoundingClientRect();
-    this.pagePositionCache.set(page, {
-      top: pageRect.top - containerRect.top,
-      left: pageRect.left - containerRect.left,
-    });
+    setTimeout(() => this.cdr.detectChanges(), 60);
   }
 
-  private addField(type: FieldType, x: number, y: number, page: number): void {
-    const value = type === 'date' ? new Date().toISOString().split('T')[0] : '';
-    this.fields.update((fields) => [...fields, { id: Date.now(), type, x, y, page, value }]);
+  private pageFromPoint(point: {
+    x: number;
+    y: number;
+  }): { page: number; rect: DOMRect; relX: number; relY: number } | null {
+    const pageEl = document
+      .elementsFromPoint(point.x, point.y)
+      .find((el): el is HTMLElement => el.classList.contains('page'));
+    if (!pageEl) return null;
+    const rect = pageEl.getBoundingClientRect();
+    return {
+      page: Number(pageEl.getAttribute('data-page-number') ?? '1'),
+      rect,
+      relX: point.x - rect.left,
+      relY: point.y - rect.top,
+    };
   }
 
-  deleteField(id: number): void {
-    this.fields.update((fields) => fields.filter((f) => f.id !== id));
+  private clampNorm(value: number, size: number): number {
+    return Math.max(0, Math.min(value, 1 - size));
   }
 
-  /** Updates a field's value while preserving referential change for the signal. */
+  private defaultValue(type: FieldType): string | undefined {
+    if (type === 'date') return new Date().toISOString().split('T')[0];
+    if (type === 'name') return this.signerName || undefined;
+    if (type === 'email') return this.signerEmail || undefined;
+    return undefined;
+  }
+
+  // ---- Resize ------------------------------------------------------------
+  startResize(event: PointerEvent, field: SignatureField): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.resizing = {
+      id: field.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      w: field.w,
+      h: field.h,
+    };
+    this.isResizing.set(true);
+    const move = (e: PointerEvent): void => this.onResizeMove(e);
+    const up = (): void => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      if (this.resizing) {
+        this.commit(this.fields()); // snapshot final size for undo
+        this.resizing = null;
+      }
+      this.isResizing.set(false);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  }
+
+  private onResizeMove(event: PointerEvent): void {
+    if (!this.resizing) return;
+    const field = this.fields().find((f) => f.id === this.resizing!.id);
+    if (!field) return;
+    const rect = this.pageEl(field.page)?.getBoundingClientRect();
+    if (!rect) return;
+    const dw = (event.clientX - this.resizing.startX) / rect.width;
+    const dh = (event.clientY - this.resizing.startY) / rect.height;
+    const w = Math.max(MIN_FIELD_NORM, Math.min(this.resizing.w + dw, 1 - field.x));
+    const h = Math.max(MIN_FIELD_NORM, Math.min(this.resizing.h + dh, 1 - field.y));
+    this.fields.update((fields) => fields.map((f) => (f.id === field.id ? { ...f, w, h } : f)));
+    this.cdr.detectChanges();
+  }
+
+  // ---- Field interaction -------------------------------------------------
+  onFieldClick(field: SignatureField): void {
+    if (this.resizing) return;
+    this.selectedId.set(field.id);
+    if (field.type === 'checkbox') {
+      this.setField(field.id, { checked: !field.checked });
+      return;
+    }
+    if (field.type === 'signature' || field.type === 'initials') {
+      this.openSignDialog(field);
+    }
+  }
+
   setFieldValue(id: number, value: string): void {
+    this.setField(id, { value });
+  }
+
+  /** Live inline-text update without pushing an undo step per keystroke. */
+  updateText(id: number, value: string): void {
     this.fields.update((fields) => fields.map((f) => (f.id === id ? { ...f, value } : f)));
   }
 
-  getFieldStyle(field: SignatureField): FieldStyle {
-    const base: FieldStyle = {
-      width: `${FIELD_WIDTH}px`,
-      height: `${FIELD_HEIGHT}px`,
-      position: 'absolute',
-    };
-    const pageElement = document.querySelector(
-      `.page[data-page-number="${field.page}"]`,
-    ) as HTMLElement | null;
+  showTextInput(field: SignatureField): boolean {
+    return isTextInput(field.type) || field.type === 'date';
+  }
 
-    if (!pageElement) {
-      const cached = this.pagePositionCache.get(field.page);
-      if (cached) {
-        return { ...base, top: `${cached.top + field.y}px`, left: `${cached.left + field.x}px` };
-      }
-      return { display: 'none' };
-    }
+  inputType(field: SignatureField): string {
+    if (field.type === 'date') return 'date';
+    if (field.type === 'email') return 'email';
+    return 'text';
+  }
 
-    const containerRect = this.mainContainer().nativeElement.getBoundingClientRect();
-    const pageRect = pageElement.getBoundingClientRect();
-    const offsetTop = pageRect.top - containerRect.top;
-    const offsetLeft = pageRect.left - containerRect.left;
-    this.pagePositionCache.set(field.page, { top: offsetTop, left: offsetLeft });
+  deleteField(id: number): void {
+    this.commit(this.fields().filter((f) => f.id !== id));
+    if (this.selectedId() === id) this.selectedId.set(null);
+  }
 
-    return {
-      ...base,
-      top: `${offsetTop + field.y}px`,
-      left: `${offsetLeft + field.x}px`,
-    };
+  toggleRequired(field: SignatureField): void {
+    this.setField(field.id, { required: !field.required });
+  }
+
+  isFilled(field: SignatureField): boolean {
+    if (field.type === 'checkbox') return !!field.checked;
+    return !!field.value;
   }
 
   isImage(value: string | undefined): boolean {
@@ -275,26 +402,68 @@ export class DocumentPreview implements AfterViewInit {
   }
 
   fieldClasses(field: SignatureField): string {
-    if (field.type === 'text') return 'bg-transparent border-transparent hover:border-blue-400';
-    if (field.value) return 'bg-transparent border-transparent';
-    return 'bg-yellow-100 border-yellow-400 border-dashed';
+    const parts = ['field-box'];
+    if (this.selectedId() === field.id) parts.push('field-selected');
+    if (this.highlightedId() === field.id) parts.push('field-highlight');
+    if (this.isFilled(field)) parts.push('field-filled');
+    else if (field.required) parts.push('field-required');
+    return parts.join(' ');
   }
 
-  // ---- Signing dialog -----------------------------------------------------
-  openSignDialog(field: SignatureField): void {
-    if (this.isDragging()) return;
-    if (field.type !== 'signature' && field.type !== 'initials') return;
-
-    this.activeFieldId = field.id;
-    this.dialogMode.set(field.type);
-    this.typedSignature = '';
-    this.initialsText = '';
-    this.displaySignDialog.set(true);
+  getFieldStyle(field: SignatureField): FieldStyle {
+    const pageEl = this.pageEl(field.page);
+    if (!pageEl) return { display: 'none' };
+    const container = this.mainContainer().nativeElement.getBoundingClientRect();
+    const rect = pageEl.getBoundingClientRect();
+    const offTop = rect.top - container.top;
+    const offLeft = rect.left - container.left;
+    return {
+      position: 'absolute',
+      left: `${offLeft + field.x * rect.width}px`,
+      top: `${offTop + field.y * rect.height}px`,
+      width: `${field.w * rect.width}px`,
+      height: `${field.h * rect.height}px`,
+      '--accent': FIELD_META[field.type].accent,
+    };
   }
 
-  updateInitialsPreview(): void {
-    const matches = this.initialsText.match(/\b(\w)/g);
-    this.typedSignature = matches ? matches.join('').toUpperCase() : '';
+  private pageEl(page: number): HTMLElement | null {
+    return document.querySelector(`.page[data-page-number="${page}"]`);
+  }
+
+  // ---- Signer identity ---------------------------------------------------
+  onSignerChanged(): void {
+    // Backfill empty name/email fields with the signer identity.
+    this.fields.update((fields) =>
+      fields.map((f) => {
+        if (f.type === 'name' && !f.value) return { ...f, value: this.signerName || undefined };
+        if (f.type === 'email' && !f.value) return { ...f, value: this.signerEmail || undefined };
+        return f;
+      }),
+    );
+  }
+
+  // ---- Signing dialog ----------------------------------------------------
+  private openSignDialog(field: SignatureField): void {
+    this.dialogField.set(field);
+    this.typedValue = field.type === 'initials' ? this.initialsFromName() : this.signerName;
+    this.dialogTab.set(field.type === 'initials' ? 'type' : 'draw');
+    this.showSignDialog.set(true);
+  }
+
+  quickAdopt(field: SignatureField): void {
+    // Apply a previously adopted signature/initials without opening the dialog.
+    const adopted = field.type === 'initials' ? this.adoptedInitials() : this.adoptedSignature();
+    if (adopted) {
+      this.setField(field.id, { value: adopted });
+    } else {
+      this.openSignDialog(field);
+    }
+  }
+
+  private initialsFromName(): string {
+    const matches = this.signerName.match(/\b(\w)/g);
+    return matches ? matches.join('').toUpperCase() : '';
   }
 
   initSignaturePad(): void {
@@ -306,62 +475,126 @@ export class DocumentPreview implements AfterViewInit {
       canvas.width = canvas.offsetWidth * ratio;
       canvas.height = canvas.offsetHeight * ratio;
       canvas.getContext('2d')?.scale(ratio, ratio);
-      this.signaturePadInstance = new SignaturePad(canvas, {
-        backgroundColor: 'rgba(255, 255, 255, 0)',
+      this.signaturePad = new SignaturePad(canvas, {
+        backgroundColor: 'rgba(255,255,255,0)',
         penColor: 'black',
       });
     });
   }
 
   clearPad(): void {
-    this.signaturePadInstance?.clear();
+    this.signaturePad?.clear();
   }
 
-  applyDrawing(): void {
-    if (this.activeFieldId == null) return;
-    if (this.signaturePadInstance && !this.signaturePadInstance.isEmpty()) {
-      this.applyValue(this.signaturePadInstance.toDataURL());
+  applyDrawn(): void {
+    if (this.signaturePad && !this.signaturePad.isEmpty()) {
+      this.applyToField(this.signaturePad.toDataURL(), true);
     }
   }
 
-  applyTyping(): void {
-    if (this.activeFieldId != null && this.typedSignature) {
-      this.applyValue(this.typedSignature);
-    }
+  applyTyped(): void {
+    if (this.typedValue.trim()) this.applyToField(this.typedValue.trim(), false);
   }
 
-  private applyValue(value: string): void {
-    if (this.activeFieldId != null) {
-      this.setFieldValue(this.activeFieldId, value);
+  onUploadImage(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      this.showError('Please choose an image file.');
+      return;
     }
-    this.signaturePadInstance = null;
-    this.displaySignDialog.set(false);
+    const reader = new FileReader();
+    reader.onload = () => this.applyToField(String(reader.result), true);
+    reader.readAsDataURL(file);
   }
 
-  // ---- Finish / export ----------------------------------------------------
-  async finishSigning(): Promise<void> {
+  private applyToField(value: string, isImage: boolean): void {
+    const field = this.dialogField();
+    if (!field) return;
+    this.setField(field.id, { value });
+    // Adopt for reuse across the document.
+    if (field.type === 'initials') this.adoptedInitials.set(value);
+    else this.adoptedSignature.set(value);
+    this.signaturePad = null;
+    this.showSignDialog.set(false);
+    this.messageService.add({
+      severity: 'success',
+      summary: field.type === 'initials' ? 'Initials applied' : 'Signature applied',
+      detail: isImage ? 'Saved for reuse on other fields.' : 'Saved for reuse on other fields.',
+    });
+  }
+
+  applyAdoptedToAll(): void {
+    const sig = this.adoptedSignature();
+    const ini = this.adoptedInitials();
+    this.commit(
+      this.fields().map((f) => {
+        if (f.type === 'signature' && !f.value && sig) return { ...f, value: sig };
+        if (f.type === 'initials' && !f.value && ini) return { ...f, value: ini };
+        return f;
+      }),
+    );
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Applied',
+      detail: 'Your adopted signature was applied to remaining fields.',
+    });
+  }
+
+  // ---- Guided signing + finish -------------------------------------------
+  goToNextRequired(): void {
+    const target = this.fields().find((f) => f.required && !this.isFilled(f));
+    if (!target) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'All set',
+        detail: 'Every required field is complete.',
+      });
+      return;
+    }
+    this.currentPage.set(target.page);
+    this.highlightedId.set(target.id);
+    this.selectedId.set(target.id);
+    setTimeout(
+      () => this.pageEl(target.page)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      50,
+    );
+    setTimeout(() => this.highlightedId.set(null), 2000);
+  }
+
+  async finish(): Promise<void> {
     if (!this.originalPdfBytes) return;
-
     const fields = this.fields();
-    if (!fields.some((f) => f.value)) {
+    if (fields.length === 0) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Nothing to sign',
-        detail: 'Add and fill at least one field before finishing.',
+        detail: 'Add at least one field first.',
       });
+      return;
+    }
+    if (!this.allRequiredDone()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Required fields incomplete',
+        detail: 'Complete the highlighted required field to continue.',
+      });
+      this.goToNextRequired();
       return;
     }
 
     this.isLoading.set(true);
     try {
-      const geometry = this.collectPageGeometry(fields);
-      const signed = await this.signingService.sign(this.originalPdfBytes, fields, geometry);
-      this.triggerDownload(signed, 'signed_document.pdf');
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Document signed',
-        detail: 'Your signed PDF has been downloaded.',
+      const result = await this.signingService.sign(this.originalPdfBytes, fields, {
+        documentName: this.fileName(),
+        signerName: this.signerName || undefined,
+        signerEmail: this.signerEmail || undefined,
       });
+      this.lastSigned = result;
+      this.envelopeId.set(result.envelopeId);
+      this.triggerDownload(result.bytes, this.signedName());
+      this.showSummary.set(true);
     } catch (error) {
       console.error('Failed to sign document', error);
       this.showError('Something went wrong while creating the PDF.');
@@ -371,16 +604,18 @@ export class DocumentPreview implements AfterViewInit {
     }
   }
 
-  private collectPageGeometry(fields: readonly SignatureField[]): Map<number, PageGeometry> {
-    const geometry = new Map<number, PageGeometry>();
-    const fallback = document.querySelector('.page') as HTMLElement | null;
-    for (const page of new Set(fields.map((f) => f.page))) {
-      const el =
-        (document.querySelector(`.page[data-page-number="${page}"]`) as HTMLElement | null) ??
-        fallback;
-      if (el) geometry.set(page, { renderedWidth: el.clientWidth });
-    }
-    return geometry;
+  downloadAgain(): void {
+    if (this.lastSigned) this.triggerDownload(this.lastSigned.bytes, this.signedName());
+  }
+
+  startNewDocument(): void {
+    this.clearSaved();
+    this.documentService.clear();
+    this.router.navigate(['/']);
+  }
+
+  private signedName(): string {
+    return this.fileName().replace(/\.pdf$/i, '') + '-signed.pdf';
   }
 
   private triggerDownload(data: Uint8Array, filename: string): void {
@@ -395,7 +630,104 @@ export class DocumentPreview implements AfterViewInit {
     URL.revokeObjectURL(url);
   }
 
+  // ---- Undo / redo -------------------------------------------------------
+  private commit(next: SignatureField[]): void {
+    this.past.push(this.fields());
+    if (this.past.length > HISTORY_LIMIT) this.past.shift();
+    this.future = [];
+    this.fields.set(next);
+    this.syncHistoryFlags();
+  }
+
+  private setField(id: number, patch: Partial<SignatureField>): void {
+    this.commit(this.fields().map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  }
+
+  undo(): void {
+    const prev = this.past.pop();
+    if (!prev) return;
+    this.future.push(this.fields());
+    this.fields.set(prev);
+    this.syncHistoryFlags();
+  }
+
+  redo(): void {
+    const next = this.future.pop();
+    if (!next) return;
+    this.past.push(this.fields());
+    this.fields.set(next);
+    this.syncHistoryFlags();
+  }
+
+  private syncHistoryFlags(): void {
+    this.canUndo.set(this.past.length > 0);
+    this.canRedo.set(this.future.length > 0);
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    const ctrl = event.ctrlKey || event.metaKey;
+    if (ctrl && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      this.undo();
+    } else if (
+      ctrl &&
+      (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey))
+    ) {
+      event.preventDefault();
+      this.redo();
+    } else if ((event.key === 'Delete' || event.key === 'Backspace') && this.selectedId() != null) {
+      event.preventDefault();
+      this.deleteField(this.selectedId()!);
+    } else if (event.key === 'Escape') {
+      this.selectedId.set(null);
+    }
+  }
+
+  // ---- Persistence -------------------------------------------------------
+  private persist(state: SavedState): void {
+    if (!this.storageKey) return;
+    try {
+      const json = JSON.stringify(state);
+      if (json.length < 4_000_000) localStorage.setItem(this.storageKey, json);
+    } catch {
+      /* quota exceeded — skip autosave */
+    }
+  }
+
+  private restore(): void {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (!raw) return;
+      const state = JSON.parse(raw) as SavedState;
+      if (Array.isArray(state.fields) && state.fields.length) {
+        this.fields.set(state.fields);
+        this.signerName = state.signerName ?? '';
+        this.signerEmail = state.signerEmail ?? '';
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Progress restored',
+          detail: 'Your previous fields for this document were restored.',
+        });
+      }
+    } catch {
+      /* ignore corrupt state */
+    }
+  }
+
+  private clearSaved(): void {
+    try {
+      localStorage.removeItem(this.storageKey);
+    } catch {
+      /* ignore */
+    }
+  }
+
   private showError(detail: string): void {
     this.messageService.add({ severity: 'error', summary: 'Error', detail });
   }
+
+  protected readonly isTextInput = isTextInput;
 }

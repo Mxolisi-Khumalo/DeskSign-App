@@ -1,0 +1,211 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+/* Toolbar buttons */
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.15s;
+}
+.tool-btn:hover:not(:disabled) {
+  background-color: rgb(241 245 249);
+}
+.tool-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+:host-context(.my-app-dark) .tool-btn:hover:not(:disabled) {
+  background-color: rgb(51 65 85);
+}
+
+/* Sidebar */
+.signer-input {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.875rem;
+  border: 1px solid rgb(203 213 225);
+  border-radius: 0.5rem;
+  background: white;
+  color: rgb(30 41 59);
+}
+.tool-chip {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.5rem;
+  background: white;
+  color: rgb(71 85 105);
+  cursor: grab;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+.tool-chip:hover {
+  background: rgb(248 250 252);
+}
+
+/* Dark-mode sidebar surfaces */
+:host-context(.my-app-dark) .signer-input,
+:host-context(.my-app-dark) .tool-chip {
+  background: rgb(30 41 59);
+  border-color: rgb(51 65 85);
+  color: rgb(226 232 240);
+}
+:host-context(.my-app-dark) .tool-chip:hover {
+  background: rgb(51 65 85);
+}
+:host-context(.my-app-dark) .signer-input::placeholder {
+  color: rgb(148 163 184);
+}
+
+/* Placed fields */
+.field-box {
+  --accent: #3b82f6;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  z-index: 40;
+  box-sizing: border-box;
+}
+.field-required {
+  border-color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+.field-filled {
+  border-style: solid;
+  border-color: #10b981;
+  background: transparent;
+}
+.field-selected {
+  box-shadow:
+    0 0 0 2px white,
+    0 0 0 4px var(--accent);
+  z-index: 45;
+}
+.field-highlight {
+  animation: pulse 1s ease-in-out 2;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px white,
+      0 0 0 4px var(--accent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px white,
+      0 0 0 8px var(--accent);
+  }
+}
+.field-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  pointer-events: none;
+}
+.field-input {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0 6px;
+  color: #000;
+  font-size: 1rem;
+}
+
+/* Field controls: hidden until hover/selected */
+.field-del,
+.field-req {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.field-box:hover .field-del,
+.field-selected .field-del,
+.field-box:hover .field-req,
+.field-selected .field-req {
+  opacity: 1;
+  pointer-events: auto;
+}
+.field-del {
+  top: -0.75rem;
+  right: -0.75rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.field-del:hover {
+  background: #dc2626;
+}
+.field-req {
+  top: -0.85rem;
+  left: -0.25rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  background: white;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.field-resize {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+  border: 2px solid white;
+  cursor: nwse-resize;
+  opacity: 0;
+}
+.field-selected .field-resize {
+  opacity: 1;
+}
+
+/* Floating next-required helper */
+.next-fab {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.6rem 1.1rem;
+  border-radius: 9999px;
+  background: #1e293b;
+  color: white;
+  font-size: 0.875rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  z-index: 50;
+}
+.next-fab:hover {
+  background: #0f172a;
+}

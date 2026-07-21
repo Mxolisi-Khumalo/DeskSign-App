@@ -4,6 +4,10 @@
 @import 'tailwindcss';
 @import 'primeicons/primeicons.css';
 
+/* Class-based dark mode driven by `.my-app-dark` on <html> (matches the
+   PrimeNG darkModeSelector configured in app.config). */
+@custom-variant dark (&:where(.my-app-dark, .my-app-dark *));
+
 @layer tailwind-base, primeng, utilities;
 @layer tailwind-base {
   @theme {

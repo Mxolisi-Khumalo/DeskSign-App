@@ -1,76 +1,231 @@
-<div class="flex h-screen bg-slate-100 overflow-hidden">
-  <p-toast></p-toast>
+<div class="flex flex-col h-screen bg-slate-100 dark:bg-slate-900 overflow-hidden">
+  <p-toast />
 
-  <!-- SIDEBAR -->
-  <aside class="p-4 space-y-3 bg-white border-r border-slate-200 z-50" aria-label="Field tools">
-    <p class="text-sm text-slate-400">Drag fields onto the document</p>
-
-    @for (tool of tools; track tool.type) {
-      <div
-        cdkDrag
-        (cdkDragEnded)="onDragEnded($event, tool.type)"
-        class="w-full flex items-center p-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition text-slate-600 cursor-move shadow-sm"
-        role="button"
-        tabindex="0"
-        [attr.aria-label]="'Add ' + tool.label + ' field (drag onto document)'"
-      >
-        <i class="pi mr-2" [class]="tool.icon + ' ' + tool.color" aria-hidden="true"></i>
-        {{ tool.label }}
-
-        <div
-          *cdkDragPreview
-          class="w-64 flex items-center p-3 rounded-lg bg-white border-2 shadow-xl opacity-90"
-          [class]="tool.borderColor"
-        >
-          <i class="pi mr-2" [class]="tool.icon + ' ' + tool.color" aria-hidden="true"></i>
-          {{ tool.label }}
-        </div>
-        <div *cdkDragPlaceholder class="opacity-0"></div>
-      </div>
-    }
-  </aside>
-
-  <!-- RIGHT CONTENT -->
-  <div class="flex-1 flex flex-col h-full relative">
-    <!-- HEADER -->
-    <header
-      class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-30"
+  <!-- TOP TOOLBAR -->
+  <header
+    class="h-14 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2 px-3 shadow-sm z-30"
+  >
+    <button
+      type="button"
+      class="tool-btn"
+      (click)="startNewDocument()"
+      pTooltip="New document"
+      aria-label="New document"
     >
-      <span class="font-semibold text-slate-700">Preview</span>
-      <div class="flex items-center space-x-2 bg-slate-100 p-1 rounded-lg">
-        <button (click)="zoomOut()" class="p-2" type="button" aria-label="Zoom out">
-          <i class="pi pi-minus" aria-hidden="true"></i>
-        </button>
-        <span class="text-xs tabular-nums" aria-live="polite">{{ zoomLabel() }}</span>
-        <button (click)="zoomIn()" class="p-2" type="button" aria-label="Zoom in">
-          <i class="pi pi-plus" aria-hidden="true"></i>
-        </button>
-      </div>
+      <i class="pi pi-arrow-left"></i>
+    </button>
+    <span class="font-semibold text-slate-700 dark:text-slate-100 truncate max-w-[12rem]">{{
+      fileName()
+    }}</span>
 
+    <!-- page nav -->
+    <div class="flex items-center gap-1 ml-3 text-slate-600 dark:text-slate-300">
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="prevPage()"
+        [disabled]="currentPage() <= 1"
+        aria-label="Previous page"
+      >
+        <i class="pi pi-chevron-left"></i>
+      </button>
+      <span class="text-xs tabular-nums w-16 text-center"
+        >{{ currentPage() }} / {{ totalPages() }}</span
+      >
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="nextPage()"
+        [disabled]="currentPage() >= totalPages()"
+        aria-label="Next page"
+      >
+        <i class="pi pi-chevron-right"></i>
+      </button>
+    </div>
+
+    <!-- zoom -->
+    <div class="flex items-center gap-1 ml-2 text-slate-600 dark:text-slate-300">
+      <button type="button" class="tool-btn" (click)="zoomOut()" aria-label="Zoom out">
+        <i class="pi pi-minus"></i>
+      </button>
+      <span class="text-xs tabular-nums w-10 text-center">{{ zoomText() }}</span>
+      <button type="button" class="tool-btn" (click)="zoomIn()" aria-label="Zoom in">
+        <i class="pi pi-plus"></i>
+      </button>
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="fitWidth()"
+        pTooltip="Fit width"
+        aria-label="Fit width"
+      >
+        <i class="pi pi-arrows-h"></i>
+      </button>
+    </div>
+
+    <div class="flex items-center gap-1 ml-2 text-slate-600 dark:text-slate-300">
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="toggleSidebar()"
+        pTooltip="Page thumbnails"
+        aria-label="Toggle thumbnails"
+      >
+        <i class="pi pi-th-large"></i>
+      </button>
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="undo()"
+        [disabled]="!canUndo()"
+        pTooltip="Undo (Ctrl+Z)"
+        aria-label="Undo"
+      >
+        <i class="pi pi-replay"></i>
+      </button>
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="redo()"
+        [disabled]="!canRedo()"
+        pTooltip="Redo (Ctrl+Y)"
+        aria-label="Redo"
+      >
+        <i class="pi pi-refresh"></i>
+      </button>
+      <button
+        type="button"
+        class="tool-btn"
+        (click)="toggleDark()"
+        pTooltip="Toggle dark mode"
+        aria-label="Toggle dark mode"
+      >
+        <i class="pi" [class.pi-moon]="!darkMode()" [class.pi-sun]="darkMode()"></i>
+      </button>
+    </div>
+
+    <div class="ml-auto flex items-center gap-3">
+      <div class="flex items-center gap-2" aria-live="polite">
+        <span class="text-xs text-slate-500 dark:text-slate-400"
+          >{{ requiredDone() }}/{{ requiredTotal() }} required</span
+        >
+        <div class="w-28 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+          <div
+            class="h-full bg-emerald-500 transition-all"
+            [style.width.%]="requiredTotal() ? (requiredDone() / requiredTotal()) * 100 : 0"
+          ></div>
+        </div>
+      </div>
       <p-button
         label="Finish"
         icon="pi pi-check"
         styleClass="p-button-success"
-        (onClick)="finishSigning()"
+        (onClick)="finish()"
       />
-    </header>
+    </div>
+  </header>
 
-    <!-- MAIN CONTAINER -->
-    <div #mainContainer class="flex-1 relative bg-slate-200 overflow-hidden h-full w-full">
+  <!-- BODY -->
+  <div class="flex flex-1 min-h-0">
+    <!-- LEFT SIDEBAR -->
+    <aside
+      class="w-64 shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 p-4 overflow-y-auto"
+      aria-label="Signing tools"
+    >
+      <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+        Your details
+      </h2>
+      <input
+        type="text"
+        [(ngModel)]="signerName"
+        (ngModelChange)="onSignerChanged()"
+        placeholder="Full name"
+        class="signer-input"
+        aria-label="Your full name"
+      />
+      <input
+        type="email"
+        [(ngModel)]="signerEmail"
+        (ngModelChange)="onSignerChanged()"
+        placeholder="Email"
+        class="signer-input"
+        aria-label="Your email"
+      />
+
+      <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mt-5 mb-2">Fields</h2>
+      <p class="text-xs text-slate-400 mb-3">Drag a field onto the document.</p>
+
+      @for (tool of fieldTypes; track tool.type) {
+        <div
+          cdkDrag
+          (cdkDragEnded)="onSidebarDrop($event, tool.type)"
+          class="tool-chip"
+          role="button"
+          tabindex="0"
+          [attr.aria-label]="'Add ' + tool.label + ' field (drag onto document)'"
+        >
+          <i class="pi mr-2" [class]="tool.icon + ' ' + tool.color"></i>
+          {{ tool.label }}
+          @if (tool.requiredByDefault) {
+            <span class="ml-auto text-rose-400 text-xs" pTooltip="Required by default">*</span>
+          }
+
+          <div *cdkDragPreview class="tool-chip border-2 shadow-xl" [class]="tool.borderColor">
+            <i class="pi mr-2" [class]="tool.icon + ' ' + tool.color"></i>
+            {{ tool.label }}
+          </div>
+          <div *cdkDragPlaceholder class="opacity-0"></div>
+        </div>
+      }
+
+      @if (adoptedSignature() || adoptedInitials()) {
+        <button
+          type="button"
+          class="w-full mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          (click)="applyAdoptedToAll()"
+        >
+          Apply my signature to all empty fields
+        </button>
+      }
+
+      <div class="mt-6 text-xs text-slate-400 space-y-1">
+        <p>
+          <span
+            class="inline-block w-3 h-3 rounded-sm border-2 border-amber-400 align-middle"
+          ></span>
+          Required, empty
+        </p>
+        <p>
+          <span
+            class="inline-block w-3 h-3 rounded-sm border-2 border-emerald-400 align-middle"
+          ></span>
+          Completed
+        </p>
+        <p class="pt-1">
+          Tips: click a field to fill it, drag to move, drag the corner to resize, Del to remove.
+        </p>
+      </div>
+    </aside>
+
+    <!-- DOCUMENT AREA -->
+    <div #mainContainer class="flex-1 relative bg-slate-200 dark:bg-slate-900 overflow-hidden">
       @if (isLoading()) {
         <div
-          class="absolute inset-0 z-50 flex items-center justify-center bg-slate-100/90"
+          class="absolute inset-0 z-50 flex items-center justify-center bg-slate-100/90 dark:bg-slate-900/90"
           role="status"
           aria-label="Loading document"
         >
-          <i class="pi pi-spin pi-spinner text-5xl text-blue-500" aria-hidden="true"></i>
+          <i class="pi pi-spin pi-spinner text-5xl text-blue-500"></i>
         </div>
       }
 
       @if (pdfSrc(); as src) {
         <ngx-extended-pdf-viewer
           [src]="src"
-          [zoom]="zoomLabel()"
+          [zoom]="zoom()"
+          [page]="currentPage()"
+          (pageChange)="onPageChange($event)"
+          [sidebarVisible]="sidebarVisible()"
           [showToolbar]="false"
           [showSidebarButton]="false"
           [showFindButton]="false"
@@ -85,8 +240,8 @@
           [showHandToolButton]="false"
           [showSpreadButton]="false"
           [showPropertiesButton]="false"
-          [height]="'auto'"
-          (pagesLoaded)="onPdfLoaded()"
+          [height]="'100%'"
+          (pagesLoaded)="onPagesLoaded($event)"
           backgroundColor="#e2e8f0"
         />
       }
@@ -94,40 +249,31 @@
       <!-- PLACED FIELDS -->
       @for (field of fields(); track field.id) {
         <div
-          class="absolute border-2 p-2 rounded shadow-lg flex items-center justify-center cursor-pointer z-40 group"
           [class]="fieldClasses(field)"
           [style]="getFieldStyle(field)"
-          (click)="openSignDialog(field)"
+          (click)="onFieldClick(field)"
           cdkDrag
-          (cdkDragStarted)="isDragging.set(true)"
-          (cdkDragEnded)="onDragEnded($event, field.type, field.id)"
+          [cdkDragDisabled]="isResizing()"
+          (cdkDragStarted)="selectedId.set(field.id)"
+          (cdkDragEnded)="onFieldMoved($event, field)"
         >
-          @if (!field.value && field.type === 'signature') {
-            <div class="flex items-center text-yellow-800 font-semibold">
-              <span class="text-xs bg-yellow-200 px-1 rounded mr-2">Sign</span>
-              <span class="text-sm italic text-gray-400">Sign Here</span>
+          <!-- content -->
+          @if (field.type === 'checkbox') {
+            <div class="w-full h-full flex items-center justify-center">
+              @if (field.checked) {
+                <i class="pi pi-check text-emerald-600 text-lg"></i>
+              }
             </div>
-          }
-          @if (!field.value && field.type === 'initials') {
-            <div class="flex items-center text-yellow-800 font-semibold">
-              <span class="text-xs bg-yellow-200 px-1 rounded mr-2">Initials</span>
-            </div>
-          }
-          @if (!field.value && field.type === 'date') {
-            <div class="flex items-center text-yellow-800 font-semibold">
-              <span class="text-xs bg-yellow-200 px-1 rounded mr-2">Date</span>
-            </div>
-          }
-
-          @if (field.type === 'text') {
+          } @else if (showTextInput(field)) {
             <input
-              type="text"
+              [type]="inputType(field)"
               [ngModel]="field.value"
-              (ngModelChange)="setFieldValue(field.id, $event)"
-              placeholder="Type text..."
-              class="w-full h-full bg-transparent border-none outline-none text-black font-sans text-lg p-1"
+              (ngModelChange)="updateText(field.id, $event)"
+              [placeholder]="fieldMeta[field.type].label"
+              class="field-input"
               (mousedown)="$event.stopPropagation()"
-              aria-label="Text field"
+              (click)="$event.stopPropagation()"
+              [attr.aria-label]="fieldMeta[field.type].label"
             />
           } @else if (isImage(field.value)) {
             <img
@@ -136,105 +282,163 @@
               alt="signature"
             />
           } @else if (field.value) {
-            <span class="font-cursive text-3xl text-black">{{ field.value }}</span>
+            <span class="font-cursive text-black leading-none" [style.fontSize.px]="24">{{
+              field.value
+            }}</span>
+          } @else {
+            <span class="field-placeholder">
+              <i class="pi" [class]="fieldMeta[field.type].icon"></i>
+              {{ fieldMeta[field.type].label }}
+            </span>
           }
 
+          <!-- required toggle -->
           <button
             type="button"
+            class="field-req"
+            (mousedown)="$event.stopPropagation()"
+            (click)="toggleRequired(field); $event.stopPropagation()"
+            [attr.aria-label]="field.required ? 'Mark optional' : 'Mark required'"
+            [pTooltip]="field.required ? 'Required' : 'Optional'"
+          >
+            {{ field.required ? 'Required' : 'Optional' }}
+          </button>
+
+          <!-- delete -->
+          <button
+            type="button"
+            class="field-del"
             (mousedown)="$event.stopPropagation()"
             (click)="deleteField(field.id); $event.stopPropagation()"
-            class="absolute -top-3 -right-3 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow hover:bg-red-600 transition z-50"
             aria-label="Remove field"
           >
-            <i class="pi pi-times" style="font-size: 0.7rem" aria-hidden="true"></i>
+            <i class="pi pi-times" style="font-size: 0.7rem"></i>
           </button>
+
+          <!-- resize handle -->
+          <span
+            class="field-resize"
+            (pointerdown)="startResize($event, field)"
+            (click)="$event.stopPropagation()"
+            aria-hidden="true"
+          ></span>
         </div>
       }
-
-      <!-- SIGN / INITIALS DIALOG -->
-      <p-dialog
-        [header]="dialogMode() === 'signature' ? 'Create Signature' : 'Create Initials'"
-        [visible]="displaySignDialog()"
-        (visibleChange)="displaySignDialog.set($event)"
-        [modal]="true"
-        [style]="{ width: '600px' }"
-        [draggable]="false"
-        [resizable]="false"
-        (onShow)="initSignaturePad()"
-      >
-        <p-tabs [value]="dialogMode() === 'initials' ? 'type' : 'draw'">
-          <p-tablist>
-            @if (dialogMode() === 'signature') {
-              <p-tab value="draw">Draw</p-tab>
-            }
-            <p-tab value="type">Type</p-tab>
-          </p-tablist>
-
-          <p-tabpanels>
-            @if (dialogMode() === 'signature') {
-              <p-tabpanel value="draw">
-                <div
-                  class="border border-slate-300 rounded bg-white mb-4 flex justify-center overflow-hidden relative"
-                >
-                  <canvas
-                    #signatureCanvas
-                    class="w-full h-full cursor-crosshair touch-none"
-                    width="500"
-                    height="200"
-                    style="touch-action: none"
-                    aria-label="Signature drawing area"
-                  ></canvas>
-                </div>
-                <div class="flex justify-between">
-                  <p-button
-                    label="Clear"
-                    icon="pi pi-eraser"
-                    styleClass="p-button-text p-button-danger"
-                    (onClick)="clearPad()"
-                  />
-                  <p-button label="Apply Signature" icon="pi pi-check" (onClick)="applyDrawing()" />
-                </div>
-              </p-tabpanel>
-            }
-
-            <p-tabpanel value="type">
-              <div class="py-8 text-center">
-                @if (dialogMode() === 'signature') {
-                  <input
-                    pInputText
-                    [(ngModel)]="typedSignature"
-                    placeholder="Type your name"
-                    class="w-full mb-6 p-3 text-2xl font-cursive text-center border-slate-300"
-                    aria-label="Typed signature"
-                  />
-                } @else {
-                  <input
-                    pInputText
-                    [(ngModel)]="initialsText"
-                    (ngModelChange)="updateInitialsPreview()"
-                    placeholder="Type full name (e.g. John Doe)"
-                    class="w-full mb-6 p-3 text-lg text-center border-slate-300"
-                    aria-label="Full name for initials"
-                  />
-                }
-
-                <div class="p-6 bg-slate-50 border border-slate-200 rounded mb-4">
-                  <p class="text-sm text-slate-400 mb-2">Preview:</p>
-                  <div class="text-4xl font-cursive text-slate-800">
-                    {{ typedSignature || 'Preview' }}
-                  </div>
-                </div>
-                <p-button
-                  label="Apply"
-                  icon="pi pi-check"
-                  (onClick)="applyTyping()"
-                  [disabled]="!typedSignature"
-                />
-              </div>
-            </p-tabpanel>
-          </p-tabpanels>
-        </p-tabs>
-      </p-dialog>
     </div>
   </div>
+
+  <!-- floating "next required" helper -->
+  @if (requiredTotal() > 0 && !allRequiredDone()) {
+    <button type="button" class="next-fab" (click)="goToNextRequired()">
+      <i class="pi pi-arrow-down mr-2"></i> Next required field
+    </button>
+  }
 </div>
+
+<!-- SIGN / INITIALS DIALOG -->
+<p-dialog
+  [header]="dialogField()?.type === 'initials' ? 'Add your initials' : 'Add your signature'"
+  [visible]="showSignDialog()"
+  (visibleChange)="showSignDialog.set($event)"
+  [modal]="true"
+  [style]="{ width: '620px' }"
+  [draggable]="false"
+  [resizable]="false"
+  (onShow)="initSignaturePad()"
+>
+  <p-tabs [value]="dialogTab()" (valueChange)="dialogTab.set($any($event))">
+    <p-tablist>
+      @if (dialogField()?.type === 'signature') {
+        <p-tab value="draw">Draw</p-tab>
+      }
+      <p-tab value="type">Type</p-tab>
+      <p-tab value="upload">Upload</p-tab>
+    </p-tablist>
+
+    <p-tabpanels>
+      @if (dialogField()?.type === 'signature') {
+        <p-tabpanel value="draw">
+          <div
+            class="border border-slate-300 rounded bg-white mb-4 flex justify-center overflow-hidden"
+          >
+            <canvas
+              #signatureCanvas
+              class="w-full cursor-crosshair"
+              style="height: 200px; touch-action: none"
+              aria-label="Signature drawing area"
+            ></canvas>
+          </div>
+          <div class="flex justify-between">
+            <p-button
+              label="Clear"
+              icon="pi pi-eraser"
+              styleClass="p-button-text p-button-danger"
+              (onClick)="clearPad()"
+            />
+            <p-button label="Apply & adopt" icon="pi pi-check" (onClick)="applyDrawn()" />
+          </div>
+        </p-tabpanel>
+      }
+
+      <p-tabpanel value="type">
+        <div class="py-6 text-center">
+          <input
+            pInputText
+            [(ngModel)]="typedValue"
+            placeholder="Type your name"
+            class="w-full mb-6 p-3 text-2xl font-cursive text-center"
+            aria-label="Typed signature"
+          />
+          <div class="p-6 bg-slate-50 border border-slate-200 rounded mb-4">
+            <p class="text-sm text-slate-400 mb-2">Preview</p>
+            <div class="text-4xl font-cursive text-slate-800">{{ typedValue || 'Preview' }}</div>
+          </div>
+          <p-button
+            label="Apply & adopt"
+            icon="pi pi-check"
+            (onClick)="applyTyped()"
+            [disabled]="!typedValue.trim()"
+          />
+        </div>
+      </p-tabpanel>
+
+      <p-tabpanel value="upload">
+        <div class="py-8 text-center">
+          <p class="text-sm text-slate-500 mb-4">Upload a transparent PNG of your signature.</p>
+          <input
+            type="file"
+            accept="image/*"
+            (change)="onUploadImage($event)"
+            aria-label="Upload signature image"
+          />
+        </div>
+      </p-tabpanel>
+    </p-tabpanels>
+  </p-tabs>
+</p-dialog>
+
+<!-- COMPLETION SUMMARY -->
+<p-dialog
+  header="Document signed"
+  [visible]="showSummary()"
+  (visibleChange)="showSummary.set($event)"
+  [modal]="true"
+  [style]="{ width: '480px' }"
+  [draggable]="false"
+  [resizable]="false"
+>
+  <div class="text-center py-4">
+    <i class="pi pi-check-circle text-6xl text-emerald-500 mb-4"></i>
+    <p class="text-slate-700 dark:text-slate-200 mb-1">Your signed PDF has been downloaded.</p>
+    <p class="text-xs text-slate-400 mb-6">Envelope ID: {{ envelopeId() }}</p>
+    <div class="flex justify-center gap-2">
+      <p-button
+        label="Download again"
+        icon="pi pi-download"
+        styleClass="p-button-outlined"
+        (onClick)="downloadAgain()"
+      />
+      <p-button label="New document" icon="pi pi-file" (onClick)="startNewDocument()" />
+    </div>
+  </div>
+</p-dialog>
